@@ -3,6 +3,7 @@ import axios from 'axios';
 import './DateRangeProcessor.css';
 
 const DateRangeProcessor = () => {
+  const [fechaInicio, setFechaInicio] = useState('');
   const [fechaFin, setFechaFin] = useState('');
   const [includesTaxDiff, setIncludesTaxDiff] = useState(false);
   const [clearExisting, setClearExisting] = useState(true);
@@ -20,6 +21,7 @@ const DateRangeProcessor = () => {
       const response = await axios.post(
         'http://localhost:8000/api/etl/process-date-range',
         {
+          fecha_inicio: fechaInicio,
           fecha_fin: fechaFin,
           includes_tax_diff: includesTaxDiff,
           clear_existing: clearExisting
@@ -34,11 +36,15 @@ const DateRangeProcessor = () => {
 
       setResult(response.data);
     } catch (err) {
+      console.error('Error completo:', err);
       if (err.response) {
-        setError(`Error: ${err.response.data.detail || err.response.data.message || 'Error desconocido'}`);
+        // El servidor respondió con un error
+        setError(`Error ${err.response.status}: ${err.response.data.detail || err.response.data.message || 'Error desconocido'}`);
       } else if (err.request) {
-        setError('Error: No se pudo conectar con el servidor. Verifica que el backend esté corriendo.');
+        // La petición se hizo pero no hubo respuesta
+        setError(`Error: No se pudo conectar con el servidor en http://localhost:8000. Verifica que el backend esté corriendo. Detalles: ${err.message}`);
       } else {
+        // Error al configurar la petición
         setError(`Error: ${err.message}`);
       }
     } finally {
@@ -62,11 +68,30 @@ const DateRangeProcessor = () => {
       <div className="processor-header">
         <h2>📅 Procesar por Rango de Fechas</h2>
         <p className="subtitle">
-          Procesa automáticamente desde <strong>31/01/2024</strong> hasta la fecha que indiques
+          Procesa automáticamente todos los periodos entre las fechas que indiques
         </p>
       </div>
 
       <form onSubmit={handleSubmit} className="processor-form">
+        <div className="form-group">
+          <label htmlFor="fechaInicio">
+            Fecha de Inicio <span className="required">*</span>
+          </label>
+          <input
+            type="date"
+            id="fechaInicio"
+            value={fechaInicio}
+            onChange={(e) => setFechaInicio(e.target.value)}
+            required
+            min="2000-01-01"
+            max="2100-12-31"
+            className="date-input"
+          />
+          <small className="help-text">
+            Fecha inicial del rango a procesar (ej: 2024-01-31)
+          </small>
+        </div>
+
         <div className="form-group">
           <label htmlFor="fechaFin">
             Fecha de Fin <span className="required">*</span>
@@ -77,12 +102,12 @@ const DateRangeProcessor = () => {
             value={fechaFin}
             onChange={(e) => setFechaFin(e.target.value)}
             required
-            min="2024-01-31"
+            min={fechaInicio || "2000-01-01"}
             max="2100-12-31"
             className="date-input"
           />
           <small className="help-text">
-            Ejemplo: 30/09/2025 procesará desde 31/01/2024 hasta 30/09/2025
+            Fecha final del rango a procesar (ej: 2025-09-30)
           </small>
         </div>
 
@@ -110,7 +135,7 @@ const DateRangeProcessor = () => {
 
         <button 
           type="submit" 
-          disabled={loading || !fechaFin}
+          disabled={loading || !fechaInicio || !fechaFin}
           className="submit-button"
         >
           {loading ? '⏳ Procesando...' : '🚀 Procesar Rango de Fechas'}

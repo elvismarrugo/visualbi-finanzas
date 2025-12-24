@@ -1,6 +1,7 @@
 import './App.css'
 import BalanceReportForm from './components/BalanceReportForm'
 import DateRangeProcessor from './components/DateRangeProcessor'
+import DataViewer from './components/DataViewer'
 
 function App() {
   return (
@@ -12,6 +13,9 @@ function App() {
 
       <main className="app-main">
         <DateRangeProcessor />
+        <div style={{ marginTop: '3rem' }}>
+          <DataViewer />
+        </div>
         <div style={{ marginTop: '3rem' }}>
           <BalanceReportForm />
         </div>

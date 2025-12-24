@@ -129,7 +129,7 @@ class ETLService:
         clear_existing: bool = True
     ) -> dict:
         """
-        Procesa el año anterior completo (12 meses) - Replica la segunda query de PowerQuery
+        Procesa el año anterior completo (meses 1-12 + mes 13 cierre) - Replica la segunda query de PowerQuery
         
         Args:
             year_base: Año base (se procesará year_base - 1)
@@ -142,12 +142,13 @@ class ETLService:
             Diccionario con estadísticas del procesamiento
         """
         previous_year = year_base - 1
-        months = list(range(1, 13))  # Siempre 12 meses para año anterior
+        # Incluir meses 1-12 y mes 13 (cierre anual) para año anterior
+        # El mes 13 representa el cierre contable con ajustes finales
         
         return await self.process_year_report(
             year=previous_year,
             month_start=1,
-            month_end=12,
+            month_end=13,  # Incluir cierre anual (mes 13)
             account_start=account_start,
             account_end=account_end,
             includes_tax_diff=includes_tax_diff,
@@ -208,6 +209,7 @@ class ETLService:
     
     async def process_date_range(
         self,
+        fecha_inicio: str,
         fecha_fin: str,
         account_start: Optional[str] = None,
         account_end: Optional[str] = None,
@@ -215,10 +217,11 @@ class ETLService:
         clear_existing: bool = True
     ) -> dict:
         """
-        Procesa reportes desde 2024-01-31 hasta la fecha de fin proporcionada
+        Procesa reportes desde fecha_inicio hasta fecha_fin
         Replica la lógica de PowerQuery con rango de fechas
         
         Args:
+            fecha_inicio: Fecha de inicio en formato YYYY-MM-DD (ej: 2024-01-31)
             fecha_fin: Fecha de fin en formato YYYY-MM-DD (ej: 2025-09-30)
             account_start: Código de cuenta inicial (opcional)
             account_end: Código de cuenta final (opcional)
@@ -228,28 +231,40 @@ class ETLService:
         Returns:
             Diccionario con estadísticas del procesamiento
         """
-        # Fecha inicio fija: 2024-01-31
-        fecha_inicio = date(2024, 1, 31)
+        # Parsear fechas
+        try:
+            fecha_inicio_parsed = datetime.strptime(fecha_inicio, "%Y-%m-%d").date()
+        except ValueError:
+            raise ValueError(f"Formato de fecha de inicio inválido: {fecha_inicio}. Use YYYY-MM-DD")
         
-        # Parsear fecha fin
         try:
             fecha_fin_parsed = datetime.strptime(fecha_fin, "%Y-%m-%d").date()
         except ValueError:
-            raise ValueError(f"Formato de fecha inválido: {fecha_fin}. Use YYYY-MM-DD")
+            raise ValueError(f"Formato de fecha de fin inválido: {fecha_fin}. Use YYYY-MM-DD")
         
-        if fecha_fin_parsed < fecha_inicio:
-            raise ValueError(f"La fecha de fin ({fecha_fin}) debe ser posterior a {fecha_inicio}")
+        if fecha_fin_parsed < fecha_inicio_parsed:
+            raise ValueError(f"La fecha de fin ({fecha_fin}) debe ser posterior o igual a la fecha de inicio ({fecha_inicio})")
         
         # Calcular periodos a procesar
-        start_year = fecha_inicio.year
-        start_month = fecha_inicio.month
+        # IMPORTANTE: El mes 13 representa el cierre anual (31 de diciembre con ajustes)
+        start_year = fecha_inicio_parsed.year
+        start_month = fecha_inicio_parsed.month
         end_year = fecha_fin_parsed.year
         end_month = fecha_fin_parsed.month
+        end_day = fecha_fin_parsed.day
         
         periodos_a_procesar = []
         for year in range(start_year, end_year + 1):
             month_start = start_month if year == start_year else 1
-            month_end = end_month if year == end_year else 12
+            # Si es el último año y la fecha es 31 de diciembre, incluir mes 13 (cierre)
+            if year == end_year:
+                if end_month == 12 and end_day == 31:
+                    month_end = 13  # Incluir cierre anual
+                else:
+                    month_end = end_month
+            else:
+                # Para años intermedios, incluir todos los meses (1-12) y el cierre (13)
+                month_end = 13
             
             for month in range(month_start, month_end + 1):
                 periodos_a_procesar.append((year, month))
@@ -328,7 +343,7 @@ class ETLService:
                 print(f"ERROR procesando {year}-{month:02d}: {e}")
         
         return {
-            "fecha_inicio": fecha_inicio.isoformat(),
+            "fecha_inicio": fecha_inicio_parsed.isoformat(),
             "fecha_fin": fecha_fin_parsed.isoformat(),
             "periodos_procesados": processed_periods,
             "total_periodos": len(processed_periods),

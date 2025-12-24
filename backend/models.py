@@ -31,8 +31,8 @@ class ErrorResponse(BaseModel):
 class ETLProcessRequest(BaseModel):
     """Request para procesar reportes ETL"""
     year: int = Field(..., ge=2000, le=2100, description="Año del reporte")
-    month_start: Optional[int] = Field(1, ge=1, le=13, description="Mes de inicio (1-13, default: 1)")
-    month_end: Optional[int] = Field(12, ge=1, le=13, description="Mes de fin (1-13, default: 12)")
+    month_start: Optional[int] = Field(1, ge=1, le=13, description="Mes de inicio (1-13, donde 13 es cierre anual, default: 1)")
+    month_end: Optional[int] = Field(12, ge=1, le=13, description="Mes de fin (1-13, donde 13 es cierre anual, default: 12)")
     account_start: Optional[str] = Field(None, description="Código de cuenta inicial (opcional)")
     account_end: Optional[str] = Field(None, description="Código de cuenta final (opcional)")
     includes_tax_diff: bool = Field(False, description="Incluir diferencia de impuestos")
@@ -60,7 +60,8 @@ class PowerBIQueryParams(BaseModel):
 
 
 class ETLProcessDateRangeRequest(BaseModel):
-    """Request para procesar desde fecha fija (2024-01-31) hasta una fecha de fin"""
+    """Request para procesar desde una fecha de inicio hasta una fecha de fin"""
+    fecha_inicio: str = Field(..., description="Fecha de inicio en formato YYYY-MM-DD (ej: 2024-01-31)")
     fecha_fin: str = Field(..., description="Fecha de fin en formato YYYY-MM-DD (ej: 2025-09-30)")
     account_start: Optional[str] = Field(None, description="Código de cuenta inicial (opcional)")
     account_end: Optional[str] = Field(None, description="Código de cuenta final (opcional)")

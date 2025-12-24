@@ -25,7 +25,19 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:5175",
+        "http://localhost:5176",
+        "http://localhost:5177",
+        "http://localhost:3000",
+        "http://127.0.0.1:5173",
+        "http://127.0.0.1:5174",
+        "http://127.0.0.1:5175",
+        "http://127.0.0.1:5176",
+        "http://127.0.0.1:5177",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -192,10 +204,11 @@ async def process_previous_year_etl(request: ETLPreviousYearRequest):
 @app.post("/api/etl/process-date-range", response_model=dict)
 async def process_date_range_etl(request: ETLProcessDateRangeRequest):
     """
-    Procesa reportes desde 2024-01-31 hasta la fecha de fin proporcionada
+    Procesa reportes desde fecha_inicio hasta fecha_fin
     Replica la lógica de PowerQuery con rango de fechas
     
-    Ejemplo: Si fecha_fin es 2025-09-30, procesa desde 2024-01-31 hasta 2025-09-30
+    Ejemplo: Si fecha_inicio es 2024-01-31 y fecha_fin es 2025-09-30, 
+    procesa todos los periodos entre esas fechas
     """
     if etl_service is None:
         raise HTTPException(
@@ -204,6 +217,7 @@ async def process_date_range_etl(request: ETLProcessDateRangeRequest):
         )
     try:
         result = await etl_service.process_date_range(
+            fecha_inicio=request.fecha_inicio,
             fecha_fin=request.fecha_fin,
             account_start=request.account_start,
             account_end=request.account_end,
