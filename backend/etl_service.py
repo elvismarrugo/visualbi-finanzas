@@ -4,7 +4,7 @@ Replica la lógica de PowerQuery
 """
 import asyncio
 from typing import List, Optional
-from datetime import date
+from datetime import date, datetime
 import pandas as pd
 from siigo_client import SiigoClient
 from excel_processor import ExcelProcessor
@@ -49,8 +49,23 @@ class ETLService:
         end_m = max(month_start, month_end)
         months = list(range(start_m, end_m + 1))
         
-        # Obtener token una sola vez
-        token = await self.siigo_client.get_access_token()
+        # Obtener token una sola vez (con retry para rate limit)
+        import asyncio
+        max_retries = 3
+        retry_delay = 2  # segundos
+        
+        for attempt in range(max_retries):
+            try:
+                token = await self.siigo_client.get_access_token()
+                break
+            except Exception as e:
+                if "429" in str(e) or "rate limit" in str(e).lower():
+                    if attempt < max_retries - 1:
+                        wait_time = retry_delay * (attempt + 1)
+                        print(f"⚠️  Rate limit alcanzado. Esperando {wait_time} segundos antes de reintentar...")
+                        await asyncio.sleep(wait_time)
+                        continue
+                raise
         
         # Inicializar base de datos si no existe
         init_db()
@@ -190,4 +205,135 @@ class ETLService:
             print(f"Error limpiando datos: {e}")
         finally:
             db.close()
+    
+    async def process_date_range(
+        self,
+        fecha_fin: str,
+        account_start: Optional[str] = None,
+        account_end: Optional[str] = None,
+        includes_tax_diff: bool = False,
+        clear_existing: bool = True
+    ) -> dict:
+        """
+        Procesa reportes desde 2024-01-31 hasta la fecha de fin proporcionada
+        Replica la lógica de PowerQuery con rango de fechas
+        
+        Args:
+            fecha_fin: Fecha de fin en formato YYYY-MM-DD (ej: 2025-09-30)
+            account_start: Código de cuenta inicial (opcional)
+            account_end: Código de cuenta final (opcional)
+            includes_tax_diff: Incluir diferencia de impuestos
+            clear_existing: Si True, elimina datos existentes del rango antes de insertar
+            
+        Returns:
+            Diccionario con estadísticas del procesamiento
+        """
+        # Fecha inicio fija: 2024-01-31
+        fecha_inicio = date(2024, 1, 31)
+        
+        # Parsear fecha fin
+        try:
+            fecha_fin_parsed = datetime.strptime(fecha_fin, "%Y-%m-%d").date()
+        except ValueError:
+            raise ValueError(f"Formato de fecha inválido: {fecha_fin}. Use YYYY-MM-DD")
+        
+        if fecha_fin_parsed < fecha_inicio:
+            raise ValueError(f"La fecha de fin ({fecha_fin}) debe ser posterior a {fecha_inicio}")
+        
+        # Calcular periodos a procesar
+        start_year = fecha_inicio.year
+        start_month = fecha_inicio.month
+        end_year = fecha_fin_parsed.year
+        end_month = fecha_fin_parsed.month
+        
+        periodos_a_procesar = []
+        for year in range(start_year, end_year + 1):
+            month_start = start_month if year == start_year else 1
+            month_end = end_month if year == end_year else 12
+            
+            for month in range(month_start, month_end + 1):
+                periodos_a_procesar.append((year, month))
+        
+        # Inicializar base de datos
+        init_db()
+        
+        # Eliminar datos existentes si se solicita
+        if clear_existing:
+            # Agrupar por año para limpiar
+            years_to_clear = {}
+            for year, month in periodos_a_procesar:
+                if year not in years_to_clear:
+                    years_to_clear[year] = []
+                if month not in years_to_clear[year]:
+                    years_to_clear[year].append(month)
+            
+            for year, months in years_to_clear.items():
+                await self._clear_year_data(year, months)
+        
+        total_rows = 0
+        processed_periods = []
+        errors = []
+        
+        # Obtener token una sola vez (con retry para rate limit)
+        max_retries = 3
+        retry_delay = 2
+        
+        for attempt in range(max_retries):
+            try:
+                token = await self.siigo_client.get_access_token()
+                break
+            except Exception as e:
+                if "429" in str(e) or "rate limit" in str(e).lower():
+                    if attempt < max_retries - 1:
+                        wait_time = retry_delay * (attempt + 1)
+                        print(f"⚠️  Rate limit alcanzado. Esperando {wait_time} segundos antes de reintentar...")
+                        await asyncio.sleep(wait_time)
+                        continue
+                raise
+        
+        # Procesar cada periodo
+        for year, month in periodos_a_procesar:
+            try:
+                # Solicitar reporte para el mes específico
+                result = await self.siigo_client.get_balance_report_by_thirdparty(
+                    year=year,
+                    month_start=month,
+                    month_end=month,
+                    account_start=account_start or "",
+                    account_end=account_end or "",
+                    includes_tax_diff=includes_tax_diff
+                )
+                
+                file_url = result.get('file_url')
+                if not file_url:
+                    errors.append(f"{year}-{month:02d}: No se recibió file_url")
+                    continue
+                
+                # Descargar Excel
+                excel_content = await self.excel_processor.download_excel(file_url)
+                
+                # Procesar Excel
+                df = self.excel_processor.process_excel(excel_content, year, month)
+                
+                # Guardar en base de datos
+                rows_inserted = await self._save_to_database(df)
+                total_rows += rows_inserted
+                processed_periods.append(f"{year}-{month:02d}")
+                
+                print(f"✅ Procesado {year}-{month:02d}: {rows_inserted} registros")
+                
+            except Exception as e:
+                error_msg = f"{year}-{month:02d}: {str(e)}"
+                errors.append(error_msg)
+                print(f"ERROR procesando {year}-{month:02d}: {e}")
+        
+        return {
+            "fecha_inicio": fecha_inicio.isoformat(),
+            "fecha_fin": fecha_fin_parsed.isoformat(),
+            "periodos_procesados": processed_periods,
+            "total_periodos": len(processed_periods),
+            "total_rows": total_rows,
+            "errors": errors,
+            "success": len(errors) == 0
+        }
 

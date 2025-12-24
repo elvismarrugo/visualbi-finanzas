@@ -10,6 +10,7 @@ from models import (
     ErrorResponse,
     ETLProcessRequest,
     ETLPreviousYearRequest,
+    ETLProcessDateRangeRequest,
     PowerBIQueryParams
 )
 from config import get_settings
@@ -188,6 +189,40 @@ async def process_previous_year_etl(request: ETLPreviousYearRequest):
         )
 
 
+@app.post("/api/etl/process-date-range", response_model=dict)
+async def process_date_range_etl(request: ETLProcessDateRangeRequest):
+    """
+    Procesa reportes desde 2024-01-31 hasta la fecha de fin proporcionada
+    Replica la lógica de PowerQuery con rango de fechas
+    
+    Ejemplo: Si fecha_fin es 2025-09-30, procesa desde 2024-01-31 hasta 2025-09-30
+    """
+    if etl_service is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Servicio ETL no disponible. PostgreSQL no está configurado o no está corriendo."
+        )
+    try:
+        result = await etl_service.process_date_range(
+            fecha_fin=request.fecha_fin,
+            account_start=request.account_start,
+            account_end=request.account_end,
+            includes_tax_diff=request.includes_tax_diff,
+            clear_existing=request.clear_existing
+        )
+        return result
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error en procesamiento ETL por rango de fechas: {str(e)}"
+        )
+
+
 # ==========================
 # Endpoints para Power BI
 # ==========================
@@ -275,9 +310,11 @@ async def get_stats_powerbi(
         if año is not None:
             query = query.filter(BalanceReport.año == año)
         
+        from sqlalchemy import func
+        
         total_records = query.count()
         total_saldo_final = query.with_entities(
-            db.func.sum(BalanceReport.saldo_final)
+            func.sum(BalanceReport.saldo_final)
         ).scalar() or 0
         
         # Agrupar por año

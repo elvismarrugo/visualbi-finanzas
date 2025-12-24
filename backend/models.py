@@ -57,3 +57,12 @@ class PowerBIQueryParams(BaseModel):
     identificacion: Optional[str] = None
     limit: int = Field(1000, ge=1, le=10000)
     offset: int = Field(0, ge=0)
+
+
+class ETLProcessDateRangeRequest(BaseModel):
+    """Request para procesar desde fecha fija (2024-01-31) hasta una fecha de fin"""
+    fecha_fin: str = Field(..., description="Fecha de fin en formato YYYY-MM-DD (ej: 2025-09-30)")
+    account_start: Optional[str] = Field(None, description="Código de cuenta inicial (opcional)")
+    account_end: Optional[str] = Field(None, description="Código de cuenta final (opcional)")
+    includes_tax_diff: bool = Field(False, description="Incluir diferencia de impuestos")
+    clear_existing: bool = Field(True, description="Eliminar datos existentes antes de insertar")

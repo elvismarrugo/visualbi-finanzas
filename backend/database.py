@@ -50,15 +50,28 @@ def get_db_engine():
     """Crea y retorna el engine de SQLAlchemy"""
     settings = get_settings()
     
-    # Construir la URL de conexión desde variables de entorno
-    # Formato: postgresql://user:password@host:port/database
-    db_url = (
-        f"postgresql://{settings.db_user}:{settings.db_password}"
-        f"@{settings.db_host}:{settings.db_port}/{settings.db_name}"
-    )
-    
-    engine = create_engine(db_url, pool_pre_ping=True)
-    return engine
+    # Intentar usar PostgreSQL primero, si falla usar SQLite como fallback
+    try:
+        # Construir la URL de conexión desde variables de entorno
+        # Formato: postgresql://user:password@host:port/database
+        db_url = (
+            f"postgresql://{settings.db_user}:{settings.db_password}"
+            f"@{settings.db_host}:{settings.db_port}/{settings.db_name}"
+        )
+        
+        engine = create_engine(db_url, pool_pre_ping=True)
+        # Probar la conexión
+        with engine.connect() as conn:
+            conn.execute("SELECT 1")
+        return engine
+    except Exception as e:
+        # Fallback a SQLite si PostgreSQL no está disponible
+        import os
+        sqlite_path = os.path.join(os.path.dirname(__file__), "..", "siigo_data.db")
+        print(f"⚠️  PostgreSQL no disponible ({e}), usando SQLite: {sqlite_path}")
+        sqlite_url = f"sqlite:///{sqlite_path}"
+        engine = create_engine(sqlite_url, connect_args={"check_same_thread": False})
+        return engine
 
 
 def get_db_session():
